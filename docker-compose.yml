@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nelly_import
+      POSTGRES_USER: nelly
+      POSTGRES_PASSWORD: nelly
+    ports: ["5432:5432"]
+    volumes: ["nelly_postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nelly -d nelly_import"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nelly_postgres:
