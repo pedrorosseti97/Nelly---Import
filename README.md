@@ -14,6 +14,18 @@ As decisões desta fundação estão em [`docs/ARCHITECTURE.md`](docs/ARCHITECTU
 
 ## Desenvolvimento local
 
+### Sem Docker (prévia local)
+
+Execute `pnpm local`. O comando gera o cliente SQLite, aplica as migrations locais,
+cria o administrador se necessário e abre o servidor em http://localhost:3000.
+Os dados persistem em `prisma/local/nelly.db` (ignorado pelo Git).
+Login: `admin@nelly.local` / `ChangeMe123!`.
+A chave de sessão é renovada ao reiniciar: basta entrar novamente.
+Este modo usa SQLite para desenvolvimento; validações financeiras de precisão e
+concorrência de produção devem continuar sendo verificadas no PostgreSQL.
+
+### PostgreSQL
+
 1. Copie `.env.example` para `.env`.
 2. Inicie o PostgreSQL: `docker compose up -d db`.
 3. Instale as dependências: `pnpm install`.

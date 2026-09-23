@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import type { Role } from "@/domain/permissions";
+import { db } from "./db";
 
 const COOKIE = "nelly_session";
 const encoder = new TextEncoder();
@@ -23,7 +24,10 @@ export async function readSession(): Promise<Session | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    return { userId: String(payload.userId), email: String(payload.email), name: String(payload.name), role: payload.role as Role };
+    if (typeof payload.userId !== "string") return null;
+    const user = await db.user.findUnique({where:{id:payload.userId},select:{id:true,email:true,name:true,role:true,active:true}});
+    if (!user?.active) return null;
+    return { userId:user.id, email:user.email, name:user.name, role:user.role };
   } catch { return null; }
 }
 
