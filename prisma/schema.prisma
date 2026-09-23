@@ -1,0 +1,295 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  VISITOR
+}
+
+enum DemandStatus {
+  OPEN
+  UNDER_ANALYSIS
+  WAITING_SUPPLIER
+  SIMULATION_READY
+  WAITING_APPROVAL
+  CONVERTED
+  CLOSED
+}
+
+enum ImportStatus {
+  QUOTATION
+  APPROVAL
+  PAYMENT
+  PRODUCTION
+  SHIPMENT
+  IN_TRANSIT
+  PORT
+  CUSTOMS_CLEARANCE
+  INLAND_TRANSPORT
+  BANK_CLOSING
+  COMPLETED
+}
+
+enum DocumentType {
+  PROFORMA
+  COMMERCIAL_INVOICE
+  BILL_OF_LADING
+  LICENSE
+  EXCHANGE_CONTRACT
+  PAYMENT_RECEIPT
+  CUSTOMS_DOCUMENT
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  TRANSITION
+  UPLOAD
+  ACTIVATE
+  REOPEN
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(VISITOR)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  approvals    Approval[]
+  auditEvents  AuditEvent[]
+  versions     EntityVersion[]
+}
+
+model Partner {
+  id          String   @id @default(uuid()) @db.Uuid
+  legalName   String
+  tradeName   String?
+  taxId       String?
+  countryCode String?
+  email       String?
+  phone       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  demands     Demand[]
+  imports     ImportProcess[]
+  payments    Payment[]
+}
+
+model Demand {
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String       @unique
+  title       String
+  description String?
+  status      DemandStatus @default(OPEN)
+  requester   String?
+  partnerId   String?      @db.Uuid
+  partner     Partner?     @relation(fields: [partnerId], references: [id])
+  deletedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  quotations  Quotation[]
+  import      ImportProcess?
+
+  @@index([status])
+  @@index([partnerId])
+}
+
+model Quotation {
+  id                  String   @id @default(uuid()) @db.Uuid
+  demandId            String   @db.Uuid
+  demand              Demand   @relation(fields: [demandId], references: [id])
+  currency             String   @db.Char(3)
+  goodsValue           Decimal  @db.Decimal(18, 4)
+  estimatedLandedBrl   Decimal? @db.Decimal(18, 2)
+  exchangeRate         Decimal? @db.Decimal(18, 6)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  approvals            Approval[]
+
+  @@index([demandId])
+}
+
+model Approval {
+  id          String           @id @default(uuid()) @db.Uuid
+  quotationId String           @db.Uuid
+  quotation   Quotation        @relation(fields: [quotationId], references: [id])
+  decidedById String           @db.Uuid
+  decidedBy   User             @relation(fields: [decidedById], references: [id])
+  decision    ApprovalDecision
+  reason      String?
+  decidedAt   DateTime         @default(now())
+
+  @@index([quotationId])
+}
+
+model ImportProcess {
+  id               String       @id @default(uuid()) @db.Uuid
+  code             String       @unique
+  demandId         String       @unique @db.Uuid
+  demand           Demand       @relation(fields: [demandId], references: [id])
+  partnerId        String       @db.Uuid
+  partner          Partner      @relation(fields: [partnerId], references: [id])
+  status           ImportStatus @default(QUOTATION)
+  originCountry    String?
+  transportMode    String?
+  destinationPort  String?
+  eta              DateTime?
+  estimatedCostBrl Decimal?      @db.Decimal(18, 2)
+  actualCostBrl    Decimal       @default(0) @db.Decimal(18, 2)
+  bankClearedAt    DateTime?
+  completedAt      DateTime?
+  reopenedAt       DateTime?
+  reopenReason     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  documents        Document[]
+  payments         Payment[]
+  expenses         Expense[]
+  alerts           Alert[]
+
+  @@index([status])
+  @@index([partnerId])
+  @@index([eta])
+}
+
+model Document {
+  id              String            @id @default(uuid()) @db.Uuid
+  importProcessId String            @db.Uuid
+  importProcess   ImportProcess     @relation(fields: [importProcessId], references: [id])
+  type            DocumentType
+  versions        DocumentVersion[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([importProcessId, type])
+}
+
+model DocumentVersion {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @db.Uuid
+  document   Document @relation(fields: [documentId], references: [id])
+  version    Int
+  objectKey  String
+  fileName   String
+  mimeType   String
+  sizeBytes  BigInt
+  checksum   String
+  active     Boolean  @default(true)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, version])
+  @@index([documentId, active])
+}
+
+model Payment {
+  id               String        @id @default(uuid()) @db.Uuid
+  importProcessId  String        @db.Uuid
+  importProcess    ImportProcess @relation(fields: [importProcessId], references: [id])
+  partnerId        String        @db.Uuid
+  partner          Partner       @relation(fields: [partnerId], references: [id])
+  installment      Int           @default(1)
+  currency         String        @db.Char(3)
+  originalAmount   Decimal       @db.Decimal(18, 4)
+  estimatedBrl     Decimal?      @db.Decimal(18, 2)
+  paidBrl          Decimal?      @db.Decimal(18, 2)
+  dueDate          DateTime
+  paidAt           DateTime?
+  status           PaymentStatus @default(PENDING)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([importProcessId])
+  @@index([status, dueDate])
+}
+
+model Expense {
+  id              String        @id @default(uuid()) @db.Uuid
+  importProcessId String        @db.Uuid
+  importProcess   ImportProcess @relation(fields: [importProcessId], references: [id])
+  category        String
+  costCenter      String
+  description     String
+  amountBrl       Decimal       @db.Decimal(18, 2)
+  incurredAt      DateTime
+  createdAt       DateTime      @default(now())
+
+  @@index([importProcessId, category])
+  @@index([costCenter])
+}
+
+model Alert {
+  id              String        @id @default(uuid()) @db.Uuid
+  importProcessId String        @db.Uuid
+  importProcess   ImportProcess @relation(fields: [importProcessId], references: [id])
+  type            String
+  priority        Int           @default(1)
+  message         String
+  dueAt           DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([resolvedAt, dueAt])
+}
+
+model AuditEvent {
+  id         String      @id @default(uuid()) @db.Uuid
+  actorId    String?     @db.Uuid
+  actor      User?       @relation(fields: [actorId], references: [id])
+  action     AuditAction
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+  occurredAt DateTime    @default(now())
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([actorId, occurredAt])
+}
+
+model EntityVersion {
+  id         String   @id @default(uuid()) @db.Uuid
+  entityType String
+  entityId   String
+  version    Int
+  snapshot   Json
+  createdById String  @db.Uuid
+  createdBy  User     @relation(fields: [createdById], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([entityType, entityId, version])
+  @@index([entityType, entityId])
+}
